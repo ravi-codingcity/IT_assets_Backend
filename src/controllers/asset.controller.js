@@ -33,17 +33,43 @@ const getCompanyPrefix = (companyName) => {
   return companyName.replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase() || 'AST';
 };
 
-// Helper: Generate serial number in format PREFIX-DDMMYYYY-XXX
-const generateSerialNumber = (companyName) => {
-  const prefix = getCompanyPrefix(companyName);
+// Helper: Get current date string in DDMMYYYY format
+const getDateString = () => {
   const now = new Date();
   const day = String(now.getDate()).padStart(2, '0');
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const year = now.getFullYear();
-  const dateStr = `${day}${month}${year}`; // DDMMYYYY
-  const random = String(Math.floor(Math.random() * 900) + 100); // 100-999
+  return `${day}${month}${year}`;
+};
+
+// Helper: Generate sequential serial number in format PREFIX-DDMMYYYY-XXX
+const generateSerialNumber = async (companyName) => {
+  const prefix = getCompanyPrefix(companyName);
+  const dateStr = getDateString();
+  const basePattern = `${prefix}-${dateStr}-`;
   
-  return `${prefix}-${dateStr}-${random}`;
+  // Find the highest existing serial number with this prefix and date
+  const latestAsset = await Asset.findOne({
+    serialNumber: { $regex: `^${basePattern}\\d{3}$`, $options: 'i' }
+  })
+    .sort({ serialNumber: -1 })
+    .select('serialNumber')
+    .lean();
+  
+  let nextSeq = 1;
+  
+  if (latestAsset && latestAsset.serialNumber) {
+    // Extract the sequence number from the last serial
+    const match = latestAsset.serialNumber.match(/(\d{3})$/);
+    if (match) {
+      nextSeq = parseInt(match[1], 10) + 1;
+    }
+  }
+  
+  // Format sequence as 3 digits (001, 002, etc.)
+  const seqStr = String(nextSeq).padStart(3, '0');
+  
+  return `${prefix}-${dateStr}-${seqStr}`;
 };
 
 // GET /assets - List all assets with pagination, filters, search
@@ -418,11 +444,8 @@ exports.uploadExcel = async (req, res, next) => {
         asset.dateOfPurchase = new Date();
       }
       
-      // Auto-generate serialNumber if not provided
-      if (!asset.serialNumber || asset.serialNumber === '' || asset.serialNumber === 'NA') {
-        // Generate serial: PREFIX-DDMMYYYY-XXX (e.g., OMT-12022026-347)
-        asset.serialNumber = generateSerialNumber(asset.companyName);
-      }
+      // Mark if serial number needs to be generated
+      asset._needsSerialNumber = !asset.serialNumber || asset.serialNumber === '' || asset.serialNumber === 'NA';
       
       asset._rowIndex = index + 2; // Row number in Excel (1-based + header)
       return asset;
@@ -440,6 +463,16 @@ exports.uploadExcel = async (req, res, next) => {
       }
       return false;
     });
+    
+    // Generate sequential serial numbers for assets that need them
+    for (const asset of validAssets) {
+      if (asset._needsSerialNumber) {
+        asset.serialNumber = await generateSerialNumber(asset.companyName);
+        delete asset._needsSerialNumber;
+      } else {
+        delete asset._needsSerialNumber;
+      }
+    }
 
     if (!validAssets.length) {
       // Include detected headers for debugging
@@ -540,23 +573,9 @@ exports.getFilterOptions = async (req, res, next) => {
 exports.generateSerial = async (req, res, next) => {
   try {
     const { companyName } = req.params;
-    let serialNumber;
-    let attempts = 0;
-    const maxAttempts = 10;
     
-    // Try to generate a unique serial number
-    do {
-      serialNumber = generateSerialNumber(companyName || 'NA');
-      const exists = await Asset.exists({ serialNumber: serialNumber.toUpperCase() });
-      if (!exists) break;
-      attempts++;
-    } while (attempts < maxAttempts);
-    
-    if (attempts >= maxAttempts) {
-      // Add milliseconds to ensure uniqueness
-      const ms = Date.now().toString().slice(-4);
-      serialNumber = `${serialNumber}-${ms}`;
-    }
+    // Generate sequential serial number
+    const serialNumber = await generateSerialNumber(companyName || 'NA');
     
     send(res, 200, { serialNumber: serialNumber.toUpperCase() }, 'Serial number generated');
   } catch (err) { next(err); }
