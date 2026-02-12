@@ -272,18 +272,56 @@ exports.uploadExcel = async (req, res, next) => {
 
     // Map Excel columns to schema fields (flexible column mapping)
     const columnMap = {
-      'serialnumber': 'serialNumber', 'serial number': 'serialNumber', 'serial_number': 'serialNumber', 'sn': 'serialNumber',
+      // Serial Number variations
+      'serialnumber': 'serialNumber', 'serial number': 'serialNumber', 'serial_number': 'serialNumber', 
+      'sn': 'serialNumber', 'sr no': 'serialNumber', 'sr.no': 'serialNumber', 'sr. no': 'serialNumber',
+      'srno': 'serialNumber', 'sl no': 'serialNumber', 'sl.no': 'serialNumber', 'slno': 'serialNumber',
+      'asset id': 'serialNumber', 'assetid': 'serialNumber', 'asset_id': 'serialNumber',
+      
+      // Company Name variations
       'companyname': 'companyName', 'company name': 'companyName', 'company': 'companyName',
-      'branch': 'branch',
-      'department': 'department', 'dept': 'department',
+      'organization': 'companyName', 'org': 'companyName', 'firm': 'companyName',
+      
+      // Branch variations
+      'branch': 'branch', 'location': 'branch', 'site': 'branch', 'office': 'branch',
+      
+      // Department variations
+      'department': 'department', 'dept': 'department', 'division': 'department', 'team': 'department',
+      
+      // User Name variations
       'username': 'userName', 'user name': 'userName', 'user': 'userName', 'name': 'userName',
-      'brand': 'brand',
-      'device': 'device', 'device type': 'device', 'devicetype': 'device',
-      'deviceserialno': 'deviceSerialNo', 'device serial no': 'deviceSerialNo', 'device serial': 'deviceSerialNo', 'device_serial': 'deviceSerialNo',
+      'employee': 'userName', 'employee name': 'userName', 'employeename': 'userName',
+      'assigned to': 'userName', 'assignedto': 'userName', 'assigned': 'userName',
+      
+      // Brand variations
+      'brand': 'brand', 'make': 'brand', 'manufacturer': 'brand', 'vendor': 'brand',
+      
+      // Device type variations
+      'device': 'device', 'device type': 'device', 'devicetype': 'device', 'type': 'device',
+      'asset type': 'device', 'assettype': 'device', 'equipment': 'device', 'category': 'device',
+      
+      // Device Serial No variations
+      'deviceserialno': 'deviceSerialNo', 'device serial no': 'deviceSerialNo', 'device serial': 'deviceSerialNo', 
+      'device_serial': 'deviceSerialNo', 'device serial number': 'deviceSerialNo', 'deviceserialnumber': 'deviceSerialNo',
+      'equipment serial': 'deviceSerialNo', 'equipment serial no': 'deviceSerialNo', 
+      'asset serial': 'deviceSerialNo', 'asset serial no': 'deviceSerialNo',
+      'serial no': 'deviceSerialNo', 'serialno': 'deviceSerialNo', 'product serial': 'deviceSerialNo',
+      
+      // Operating System variations
       'operatingsystem': 'operatingSystem', 'operating system': 'operatingSystem', 'os': 'operatingSystem',
-      'dateofpurchase': 'dateOfPurchase', 'date of purchase': 'dateOfPurchase', 'purchase date': 'dateOfPurchase', 'purchasedate': 'dateOfPurchase',
-      'remark': 'remark', 'remarks': 'remark', 'notes': 'remark', 'comment': 'remark',
-      'status': 'status'
+      
+      // Date of Purchase variations
+      'dateofpurchase': 'dateOfPurchase', 'date of purchase': 'dateOfPurchase', 'purchase date': 'dateOfPurchase', 
+      'purchasedate': 'dateOfPurchase', 'purchase_date': 'dateOfPurchase', 'purchased on': 'dateOfPurchase',
+      'date': 'dateOfPurchase', 'bought on': 'dateOfPurchase', 'acquisition date': 'dateOfPurchase',
+      'purchase': 'dateOfPurchase',
+      
+      // Remark variations
+      'remark': 'remark', 'remarks': 'remark', 'notes': 'remark', 'comment': 'remark', 'comments': 'remark',
+      'description': 'remark',
+      
+      // Status variations
+      'status': 'status', 'state': 'status', 'condition': 'status'
     };
 
     // Transform Excel data to match schema
@@ -331,7 +369,13 @@ exports.uploadExcel = async (req, res, next) => {
     });
 
     if (!validAssets.length) {
-      return send(res, 400, { validationErrors }, 'No valid records found');
+      // Include detected headers for debugging
+      const detectedHeaders = rawData.length > 0 ? Object.keys(rawData[0]) : [];
+      return send(res, 400, { 
+        validationErrors: validationErrors.slice(0, 20),
+        detectedHeaders,
+        expectedColumns: ['serialNumber', 'companyName', 'branch', 'department', 'userName', 'brand', 'device', 'deviceSerialNo', 'dateOfPurchase', 'operatingSystem', 'remark', 'status']
+      }, 'No valid records found. Check that your Excel has the required column headers.');
     }
 
     // Insert in batches of 500 for large datasets
