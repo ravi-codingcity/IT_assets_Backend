@@ -25,6 +25,7 @@ const upload = multer({
 router.get('/stats/overview', controller.getAssetStats);
 router.get('/filters', controller.getFilterOptions);
 router.get('/export', controller.exportAssets);
+router.get('/generate-serial/:companyName', controller.generateSerial);
 
 // Bulk operations (before :id routes)
 router.post('/bulk', controller.bulkCreateAssets);

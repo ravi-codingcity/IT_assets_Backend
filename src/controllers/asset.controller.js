@@ -6,6 +6,46 @@ const send = (res, status, data, message) => {
   res.status(status).json({ success: status < 400, data, message });
 };
 
+// Helper: Get company prefix for serial number
+const getCompanyPrefix = (companyName) => {
+  if (!companyName || companyName === 'NA') return 'AST'; // Default prefix
+  
+  const name = companyName.toLowerCase().trim();
+  
+  // Predefined company prefixes
+  const prefixMap = {
+    'omtrans': 'OMT',
+    'om trans': 'OMT',
+    'tgl': 'TGL',
+    'omtrax': 'OMX',
+    'om trax': 'OMX'
+  };
+  
+  // Check exact match first
+  if (prefixMap[name]) return prefixMap[name];
+  
+  // Check partial match
+  for (const [key, prefix] of Object.entries(prefixMap)) {
+    if (name.includes(key)) return prefix;
+  }
+  
+  // Generate prefix from first 3 letters of company name (uppercase)
+  return companyName.replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase() || 'AST';
+};
+
+// Helper: Generate serial number in format PREFIX-DDMMYYYY-XXX
+const generateSerialNumber = (companyName) => {
+  const prefix = getCompanyPrefix(companyName);
+  const now = new Date();
+  const day = String(now.getDate()).padStart(2, '0');
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const year = now.getFullYear();
+  const dateStr = `${day}${month}${year}`; // DDMMYYYY
+  const random = String(Math.floor(Math.random() * 900) + 100); // 100-999
+  
+  return `${prefix}-${dateStr}-${random}`;
+};
+
 // GET /assets - List all assets with pagination, filters, search
 exports.getAllAssets = async (req, res, next) => {
   try {
@@ -378,13 +418,10 @@ exports.uploadExcel = async (req, res, next) => {
         asset.dateOfPurchase = new Date();
       }
       
-      // Auto-generate serialNumber if not provided (will be replaced by frontend's value)
+      // Auto-generate serialNumber if not provided
       if (!asset.serialNumber || asset.serialNumber === '' || asset.serialNumber === 'NA') {
-        // Generate unique serial: IT-YYYYMMDD-HHMMSS-INDEX
-        const now = new Date();
-        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-        const timeStr = now.toISOString().slice(11, 19).replace(/:/g, '');
-        asset.serialNumber = `IT-${dateStr}-${timeStr}-${String(index + 1).padStart(4, '0')}`;
+        // Generate serial: PREFIX-DDMMYYYY-XXX (e.g., OMT-12022026-347)
+        asset.serialNumber = generateSerialNumber(asset.companyName);
       }
       
       asset._rowIndex = index + 2; // Row number in Excel (1-based + header)
@@ -496,5 +533,31 @@ exports.getFilterOptions = async (req, res, next) => {
       statuses: statuses.sort(),
       brands: brands.sort()
     }, 'Filter options retrieved');
+  } catch (err) { next(err); }
+};
+
+// GET /assets/generate-serial/:companyName - Generate a new serial number
+exports.generateSerial = async (req, res, next) => {
+  try {
+    const { companyName } = req.params;
+    let serialNumber;
+    let attempts = 0;
+    const maxAttempts = 10;
+    
+    // Try to generate a unique serial number
+    do {
+      serialNumber = generateSerialNumber(companyName || 'NA');
+      const exists = await Asset.exists({ serialNumber: serialNumber.toUpperCase() });
+      if (!exists) break;
+      attempts++;
+    } while (attempts < maxAttempts);
+    
+    if (attempts >= maxAttempts) {
+      // Add milliseconds to ensure uniqueness
+      const ms = Date.now().toString().slice(-4);
+      serialNumber = `${serialNumber}-${ms}`;
+    }
+    
+    send(res, 200, { serialNumber: serialNumber.toUpperCase() }, 'Serial number generated');
   } catch (err) { next(err); }
 };
