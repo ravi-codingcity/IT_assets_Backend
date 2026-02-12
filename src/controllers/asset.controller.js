@@ -8,7 +8,7 @@ const send = (res, status, data, message) => {
 // GET /assets - List all assets with pagination, filters, search
 exports.getAllAssets = async (req, res, next) => {
   try {
-    const { page = 1, limit = 10, sortBy = 'createdAt', order = 'desc', search, ...filters } = req.query;
+    const { page = 1, limit = 20, sortBy = 'createdAt', order = 'desc', search, ...filters } = req.query;
     const skip = (page - 1) * limit;
 
     // Build filter
