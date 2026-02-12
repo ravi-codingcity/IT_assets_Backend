@@ -1,19 +1,19 @@
 const mongoose = require('mongoose');
 
-const DEVICE_TYPES = ['Desktop', 'Laptop', 'Tablet', 'Monitor', 'Printer', 'Scanner', 'Server', 'Network Device', 'Other'];
+const DEVICE_TYPES = ['Desktop', 'Laptop', 'Tablet', 'Monitor', 'Printer', 'Scanner', 'Server', 'Network Device', 'Other', 'NA'];
 const STATUS_TYPES = ['Active', 'Inactive', 'Under Maintenance', 'Disposed', 'Lost'];
 
 const assetSchema = new mongoose.Schema({
   serialNumber: { type: String, required: true, unique: true, trim: true, uppercase: true },
-  companyName: { type: String, required: true, trim: true },
-  branch: { type: String, required: true, trim: true },
-  department: { type: String, required: true, trim: true },
-  userName: { type: String, required: true, trim: true },
-  brand: { type: String, required: true, trim: true },
-  device: { type: String, required: true, enum: DEVICE_TYPES },
-  deviceSerialNo: { type: String, required: true, trim: true, uppercase: true },
-  operatingSystem: { type: String, trim: true, default: '' },
-  dateOfPurchase: { type: Date, required: true },
+  companyName: { type: String, trim: true, default: 'NA' },
+  branch: { type: String, trim: true, default: 'NA' },
+  department: { type: String, trim: true, default: 'NA' },
+  userName: { type: String, trim: true, default: 'NA' },
+  brand: { type: String, trim: true, default: 'NA' },
+  device: { type: String, enum: DEVICE_TYPES, default: 'Other' },
+  deviceSerialNo: { type: String, trim: true, uppercase: true, default: 'NA' },
+  operatingSystem: { type: String, trim: true, default: 'NA' },
+  dateOfPurchase: { type: Date, default: Date.now },
   remark: { type: String, trim: true, maxlength: 500, default: '' },
   status: { type: String, enum: STATUS_TYPES, default: 'Active' },
   isDeleted: { type: Boolean, default: false },

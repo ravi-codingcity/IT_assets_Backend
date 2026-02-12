@@ -270,9 +270,9 @@ exports.uploadExcel = async (req, res, next) => {
       return send(res, 400, null, 'Maximum 5000 records allowed per file');
     }
 
-    // Map Excel columns to schema fields (flexible column mapping)
+    // Map Excel columns to schema fields (flexible column mapping - case insensitive)
     const columnMap = {
-      // Serial Number variations
+      // Serial Number variations (optional - frontend will add if missing)
       'serialnumber': 'serialNumber', 'serial number': 'serialNumber', 'serial_number': 'serialNumber', 
       'sn': 'serialNumber', 'sr no': 'serialNumber', 'sr.no': 'serialNumber', 'sr. no': 'serialNumber',
       'srno': 'serialNumber', 'sl no': 'serialNumber', 'sl.no': 'serialNumber', 'slno': 'serialNumber',
@@ -306,6 +306,7 @@ exports.uploadExcel = async (req, res, next) => {
       'equipment serial': 'deviceSerialNo', 'equipment serial no': 'deviceSerialNo', 
       'asset serial': 'deviceSerialNo', 'asset serial no': 'deviceSerialNo',
       'serial no': 'deviceSerialNo', 'serialno': 'deviceSerialNo', 'product serial': 'deviceSerialNo',
+      'device s.no': 'deviceSerialNo', 'device sno': 'deviceSerialNo',
       
       // Operating System variations
       'operatingsystem': 'operatingSystem', 'operating system': 'operatingSystem', 'os': 'operatingSystem',
@@ -349,33 +350,68 @@ exports.uploadExcel = async (req, res, next) => {
         }
       });
       
+      // Set default values for blank/empty fields - use "NA" for missing text fields
+      const textFields = ['companyName', 'branch', 'department', 'userName', 'brand', 'device', 'deviceSerialNo', 'operatingSystem', 'remark'];
+      textFields.forEach(field => {
+        if (!asset[field] || asset[field] === '') {
+          asset[field] = 'NA';
+        }
+      });
+      
+      // Handle device field - map to valid enum or default to 'Other'
+      const validDevices = ['Desktop', 'Laptop', 'Tablet', 'Monitor', 'Printer', 'Scanner', 'Server', 'Network Device', 'Other', 'NA'];
+      if (asset.device) {
+        // Try to match device type (case-insensitive)
+        const matchedDevice = validDevices.find(d => d.toLowerCase() === asset.device.toLowerCase());
+        asset.device = matchedDevice || 'Other';
+      } else {
+        asset.device = 'Other';
+      }
+      
+      // Set default status if not provided
+      if (!asset.status || asset.status === '') {
+        asset.status = 'Active';
+      }
+      
+      // Set default date if not provided (current date)
+      if (!asset.dateOfPurchase) {
+        asset.dateOfPurchase = new Date();
+      }
+      
+      // Auto-generate serialNumber if not provided (will be replaced by frontend's value)
+      if (!asset.serialNumber || asset.serialNumber === '' || asset.serialNumber === 'NA') {
+        // Generate unique serial: IT-YYYYMMDD-HHMMSS-INDEX
+        const now = new Date();
+        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+        const timeStr = now.toISOString().slice(11, 19).replace(/:/g, '');
+        asset.serialNumber = `IT-${dateStr}-${timeStr}-${String(index + 1).padStart(4, '0')}`;
+      }
+      
       asset._rowIndex = index + 2; // Row number in Excel (1-based + header)
       return asset;
     });
 
-    // Validate required fields
-    const validAssets = [];
-    const validationErrors = [];
-    const requiredFields = ['serialNumber', 'companyName', 'branch', 'department', 'userName', 'brand', 'device', 'deviceSerialNo', 'dateOfPurchase'];
-
-    assets.forEach(asset => {
-      const missing = requiredFields.filter(f => !asset[f]);
-      if (missing.length) {
-        validationErrors.push({ row: asset._rowIndex, missing, serialNumber: asset.serialNumber || 'N/A' });
-      } else {
+    // No validation errors needed - all fields have defaults now
+    // Just filter out completely empty rows
+    const validAssets = assets.filter(asset => {
+      // Check if at least one meaningful field has real data (not just "NA")
+      const hasData = ['companyName', 'branch', 'department', 'userName', 'brand', 'device', 'deviceSerialNo']
+        .some(f => asset[f] && asset[f] !== 'NA' && asset[f] !== '');
+      if (hasData) {
         delete asset._rowIndex;
-        validAssets.push(asset);
+        return true;
       }
+      return false;
     });
 
     if (!validAssets.length) {
       // Include detected headers for debugging
       const detectedHeaders = rawData.length > 0 ? Object.keys(rawData[0]) : [];
       return send(res, 400, { 
-        validationErrors: validationErrors.slice(0, 20),
         detectedHeaders,
-        expectedColumns: ['serialNumber', 'companyName', 'branch', 'department', 'userName', 'brand', 'device', 'deviceSerialNo', 'dateOfPurchase', 'operatingSystem', 'remark', 'status']
-      }, 'No valid records found. Check that your Excel has the required column headers.');
+        message: 'All rows appear to be empty. Make sure your Excel has data in at least one of these columns.',
+        expectedColumns: ['companyName', 'branch', 'department', 'userName', 'brand', 'device', 'deviceSerialNo', 'dateOfPurchase', 'operatingSystem', 'remark', 'status']
+      }, 'No valid records found. Check that your Excel has data.');
     }
 
     // Insert in batches of 500 for large datasets
@@ -401,10 +437,10 @@ exports.uploadExcel = async (req, res, next) => {
     send(res, 201, {
       totalRows: rawData.length,
       created: results.inserted.length,
-      failed: results.errors.length + validationErrors.length,
-      validationErrors: validationErrors.slice(0, 50), // Limit error details
+      failed: results.errors.length,
+      skippedEmptyRows: rawData.length - validAssets.length,
       insertErrors: results.errors.slice(0, 50)
-    }, `Excel processed: ${results.inserted.length} created, ${results.errors.length + validationErrors.length} failed`);
+    }, `Excel processed: ${results.inserted.length} created, ${results.errors.length} failed`);
   } catch (err) { 
     if (err.message?.includes('Encrypted')) {
       return send(res, 400, null, 'Cannot read password-protected Excel files');
