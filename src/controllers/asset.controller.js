@@ -42,10 +42,8 @@ const getDateString = () => {
   return `${day}${month}${year}`;
 };
 
-// Helper: Generate sequential serial number in format PREFIX-DDMMYYYY-XXX
-const generateSerialNumber = async (companyName) => {
-  const prefix = getCompanyPrefix(companyName);
-  const dateStr = getDateString();
+// Helper: Get the next sequence number for a given prefix+date pattern
+const getNextSequenceNumber = async (prefix, dateStr) => {
   const basePattern = `${prefix}-${dateStr}-`;
   
   // Find the highest existing serial number with this prefix and date
@@ -66,8 +64,17 @@ const generateSerialNumber = async (companyName) => {
     }
   }
   
-  // Format sequence as 3 digits (001, 002, etc.)
-  const seqStr = String(nextSeq).padStart(3, '0');
+  return nextSeq;
+};
+
+// Helper: Generate sequential serial number in format PREFIX-DDMMYYYY-XXX
+// offset parameter is used for batch processing to avoid duplicates
+const generateSerialNumber = async (companyName, offset = 0) => {
+  const prefix = getCompanyPrefix(companyName);
+  const dateStr = getDateString();
+  
+  const nextSeq = await getNextSequenceNumber(prefix, dateStr);
+  const seqStr = String(nextSeq + offset).padStart(3, '0');
   
   return `${prefix}-${dateStr}-${seqStr}`;
 };
@@ -463,16 +470,6 @@ exports.uploadExcel = async (req, res, next) => {
       }
       return false;
     });
-    
-    // Generate sequential serial numbers for assets that need them
-    for (const asset of validAssets) {
-      if (asset._needsSerialNumber) {
-        asset.serialNumber = await generateSerialNumber(asset.companyName);
-        delete asset._needsSerialNumber;
-      } else {
-        delete asset._needsSerialNumber;
-      }
-    }
 
     if (!validAssets.length) {
       // Include detected headers for debugging
@@ -482,6 +479,39 @@ exports.uploadExcel = async (req, res, next) => {
         message: 'All rows appear to be empty. Make sure your Excel has data in at least one of these columns.',
         expectedColumns: ['companyName', 'branch', 'department', 'userName', 'brand', 'device', 'deviceSerialNo', 'dateOfPurchase', 'operatingSystem', 'remark', 'status']
       }, 'No valid records found. Check that your Excel has data.');
+    }
+    
+    // Generate sequential serial numbers for assets that need them
+    // First, gather all unique prefixes and get their starting sequence numbers
+    const dateStr = getDateString();
+    const prefixStartSeq = {}; // { 'OMT': 5, 'TGL': 3, ... } - starting sequence per prefix
+    const prefixCurrentSeq = {}; // Track current sequence during assignment
+    
+    // Collect all unique prefixes needed
+    const uniquePrefixes = new Set();
+    for (const asset of validAssets) {
+      if (asset._needsSerialNumber) {
+        uniquePrefixes.add(getCompanyPrefix(asset.companyName));
+      }
+    }
+    
+    // Query DB once per prefix to get starting sequence
+    for (const prefix of uniquePrefixes) {
+      prefixStartSeq[prefix] = await getNextSequenceNumber(prefix, dateStr);
+      prefixCurrentSeq[prefix] = prefixStartSeq[prefix];
+    }
+    
+    // Assign serial numbers using tracked sequences
+    for (const asset of validAssets) {
+      if (asset._needsSerialNumber) {
+        const prefix = getCompanyPrefix(asset.companyName);
+        const seq = prefixCurrentSeq[prefix];
+        asset.serialNumber = `${prefix}-${dateStr}-${String(seq).padStart(3, '0')}`;
+        prefixCurrentSeq[prefix] = seq + 1;
+        delete asset._needsSerialNumber;
+      } else {
+        delete asset._needsSerialNumber;
+      }
     }
 
     // Insert in batches of 500 for large datasets
