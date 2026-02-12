@@ -9,7 +9,9 @@ const send = (res, status, data, message) => {
 exports.getAllAssets = async (req, res, next) => {
   try {
     const { page = 1, limit = 20, sortBy = 'createdAt', order = 'desc', search, ...filters } = req.query;
-    const skip = (page - 1) * limit;
+    const currentPage = Math.max(1, parseInt(page));
+    const pageLimit = Math.max(1, Math.min(100, parseInt(limit))); // Max 100 per page
+    const skip = (currentPage - 1) * pageLimit;
 
     // Build filter
     const query = { isDeleted: false };
@@ -24,12 +26,26 @@ exports.getAllAssets = async (req, res, next) => {
 
     // Execute queries in parallel
     const [assets, total] = await Promise.all([
-      Asset.find(query).sort({ [sortBy]: order === 'asc' ? 1 : -1 }).skip(skip).limit(+limit).lean(),
+      Asset.find(query).sort({ [sortBy]: order === 'asc' ? 1 : -1 }).skip(skip).limit(pageLimit).lean(),
       Asset.countDocuments(query)
     ]);
 
-    const totalPages = Math.ceil(total / limit);
-    send(res, 200, { assets, pagination: { page: +page, totalPages, total, limit: +limit } }, 'Assets retrieved');
+    const totalPages = Math.ceil(total / pageLimit);
+    
+    // Enhanced pagination info for frontend
+    const pagination = {
+      currentPage,
+      totalPages,
+      totalItems: total,
+      itemsPerPage: pageLimit,
+      itemsOnPage: assets.length,
+      hasNextPage: currentPage < totalPages,
+      hasPrevPage: currentPage > 1,
+      nextPage: currentPage < totalPages ? currentPage + 1 : null,
+      prevPage: currentPage > 1 ? currentPage - 1 : null
+    };
+
+    send(res, 200, { assets, pagination }, 'Assets retrieved');
   } catch (err) { next(err); }
 };
 
