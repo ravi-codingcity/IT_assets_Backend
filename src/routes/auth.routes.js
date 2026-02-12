@@ -31,6 +31,7 @@ const loginValidation = [
 // Reset password validation
 const resetValidation = [
   body('username').notEmpty().withMessage('Username is required').trim(),
+  body('oldPassword').notEmpty().withMessage('Current password is required'),
   body('newPassword').isLength({ min: 6 }).withMessage('New password must be at least 6 characters'),
   validate
 ];

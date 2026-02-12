@@ -50,12 +50,18 @@ exports.login = async (req, res, next) => {
 // POST /auth/reset-password - Reset password
 exports.resetPassword = async (req, res, next) => {
   try {
-    const { username, newPassword } = req.body;
+    const { username, oldPassword, newPassword } = req.body;
 
     // Find user
     const user = await User.findOne({ username: username.toLowerCase() });
     if (!user) {
       return send(res, 404, null, 'User not found');
+    }
+
+    // Verify old password
+    const isMatch = await user.comparePassword(oldPassword);
+    if (!isMatch) {
+      return send(res, 401, null, 'Current password is incorrect');
     }
 
     // Update password
