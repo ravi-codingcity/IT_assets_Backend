@@ -44,27 +44,48 @@ const getDateString = () => {
 
 // Helper: Get the next sequence number for a given prefix+date pattern
 const getNextSequenceNumber = async (prefix, dateStr) => {
-  const basePattern = `${prefix}-${dateStr}-`;
+  const basePattern = `^${prefix}-${dateStr}-(\\d+)$`;
   
-  // Find the highest existing serial number with this prefix and date
-  const latestAsset = await Asset.findOne({
-    serialNumber: { $regex: `^${basePattern}\\d{3}$`, $options: 'i' }
+  // Find ALL assets matching this prefix and date
+  const assets = await Asset.find({
+    serialNumber: { $regex: basePattern, $options: 'i' },
+    isDeleted: false
   })
-    .sort({ serialNumber: -1 })
     .select('serialNumber')
     .lean();
   
-  let nextSeq = 1;
+  let maxSeq = 0;
   
-  if (latestAsset && latestAsset.serialNumber) {
-    // Extract the sequence number from the last serial
-    const match = latestAsset.serialNumber.match(/(\d{3})$/);
+  // Extract and find the maximum sequence number
+  for (const asset of assets) {
+    const match = asset.serialNumber.match(/-(\d+)$/);
     if (match) {
-      nextSeq = parseInt(match[1], 10) + 1;
+      const seq = parseInt(match[1], 10);
+      if (seq > maxSeq) {
+        maxSeq = seq;
+      }
     }
   }
   
-  return nextSeq;
+  // Also check deleted assets to avoid reusing serial numbers
+  const deletedAssets = await Asset.find({
+    serialNumber: { $regex: basePattern, $options: 'i' },
+    isDeleted: true
+  })
+    .select('serialNumber')
+    .lean();
+  
+  for (const asset of deletedAssets) {
+    const match = asset.serialNumber.match(/-(\d+)$/);
+    if (match) {
+      const seq = parseInt(match[1], 10);
+      if (seq > maxSeq) {
+        maxSeq = seq;
+      }
+    }
+  }
+  
+  return maxSeq + 1;
 };
 
 // Helper: Generate sequential serial number in format PREFIX-DDMMYYYY-XXX
