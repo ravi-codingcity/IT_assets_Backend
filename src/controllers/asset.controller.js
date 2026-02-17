@@ -42,14 +42,15 @@ const getDateString = () => {
   return `${day}${month}${year}`;
 };
 
-// Helper: Get the next sequence number for a given prefix+date pattern
-const getNextSequenceNumber = async (prefix, dateStr) => {
-  const basePattern = `^${prefix}-${dateStr}-(\\d+)$`;
+// Helper: Get the next sequence number for a given prefix (regardless of date)
+// This ensures unique sequential numbers across all dates for the same company
+const getNextSequenceNumber = async (prefix) => {
+  // Find ALL assets for this company prefix (any date)
+  // Pattern: PREFIX-DDMMYYYY-XXX where XXX is the sequence
+  const pattern = `^${prefix}-\\d{8}-`;
   
-  // Find ALL assets matching this prefix and date
   const assets = await Asset.find({
-    serialNumber: { $regex: basePattern, $options: 'i' },
-    isDeleted: false
+    serialNumber: { $regex: pattern, $options: 'i' }
   })
     .select('serialNumber')
     .lean();
@@ -58,6 +59,7 @@ const getNextSequenceNumber = async (prefix, dateStr) => {
   
   // Extract and find the maximum sequence number
   for (const asset of assets) {
+    // Match the last part after the last hyphen
     const match = asset.serialNumber.match(/-(\d+)$/);
     if (match) {
       const seq = parseInt(match[1], 10);
@@ -67,23 +69,7 @@ const getNextSequenceNumber = async (prefix, dateStr) => {
     }
   }
   
-  // Also check deleted assets to avoid reusing serial numbers
-  const deletedAssets = await Asset.find({
-    serialNumber: { $regex: basePattern, $options: 'i' },
-    isDeleted: true
-  })
-    .select('serialNumber')
-    .lean();
-  
-  for (const asset of deletedAssets) {
-    const match = asset.serialNumber.match(/-(\d+)$/);
-    if (match) {
-      const seq = parseInt(match[1], 10);
-      if (seq > maxSeq) {
-        maxSeq = seq;
-      }
-    }
-  }
+  console.log(`[Serial Gen] Prefix: ${prefix}, Found ${assets.length} assets, Max seq: ${maxSeq}, Next: ${maxSeq + 1}`);
   
   return maxSeq + 1;
 };
@@ -94,10 +80,13 @@ const generateSerialNumber = async (companyName, offset = 0) => {
   const prefix = getCompanyPrefix(companyName);
   const dateStr = getDateString();
   
-  const nextSeq = await getNextSequenceNumber(prefix, dateStr);
+  const nextSeq = await getNextSequenceNumber(prefix);
   const seqStr = String(nextSeq + offset).padStart(3, '0');
   
-  return `${prefix}-${dateStr}-${seqStr}`;
+  const serialNumber = `${prefix}-${dateStr}-${seqStr}`;
+  console.log(`[Serial Gen] Generated: ${serialNumber} for company: ${companyName}`);
+  
+  return serialNumber;
 };
 
 // GET /assets - List all assets with pagination, filters, search
@@ -524,7 +513,7 @@ exports.uploadExcel = async (req, res, next) => {
     
     // Query DB once per prefix to get starting sequence
     for (const prefix of uniquePrefixes) {
-      prefixStartSeq[prefix] = await getNextSequenceNumber(prefix, dateStr);
+      prefixStartSeq[prefix] = await getNextSequenceNumber(prefix);
       prefixCurrentSeq[prefix] = prefixStartSeq[prefix];
     }
     
