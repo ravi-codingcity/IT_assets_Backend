@@ -191,11 +191,17 @@ exports.getAssetBySerialNumber = async (req, res, next) => {
 // POST /assets - Create new asset
 exports.createAsset = async (req, res, next) => {
   try {
-    const { serialNumber, createdBy } = req.body;
+    let { serialNumber, companyName, createdBy } = req.body;
     
     // Validate createdBy is provided
     if (!createdBy) {
       return send(res, 400, null, 'createdBy (user ID) is required');
+    }
+    
+    // Auto-generate serial number if not provided
+    if (!serialNumber || serialNumber === '' || serialNumber === 'NA') {
+      serialNumber = await generateSerialNumber(companyName || 'NA');
+      req.body.serialNumber = serialNumber;
     }
     
     // Check duplicate
