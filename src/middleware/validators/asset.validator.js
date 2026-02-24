@@ -25,7 +25,7 @@ exports.validateAsset = [
   required('brand'),
   body('device').notEmpty().withMessage('Device is required').isIn(DEVICES).withMessage('Invalid device type'),
   required('deviceSerialNo'),
-  body('dateOfPurchase').notEmpty().withMessage('Date of purchase is required').isISO8601().withMessage('Invalid date'),
+  body('dateOfPurchase').optional().isISO8601().withMessage('Invalid date'),
   body('operatingSystem').optional().trim(),
   body('remark').optional().trim().isLength({ max: 500 }),
   body('createdBy').notEmpty().withMessage('createdBy is required').isMongoId().withMessage('Invalid user ID'),
