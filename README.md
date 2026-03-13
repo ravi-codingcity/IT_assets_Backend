@@ -1,94 +1,221 @@
-# IT Asset Management Backend
+﻿# IT Asset Management Backend
 
-A Node.js/Express.js backend API for managing IT assets with MongoDB database.
+A robust Node.js/Express.js backend API for managing IT assets with MongoDB database, featuring user authentication, bulk Excel uploads, and auto-generated sequential serial numbers.
 
 ## Features
 
 - RESTful API for IT asset management
+- User authentication (Signup, Login, Password Reset)
 - MongoDB database with Mongoose ODM
+- Auto-generated sequential serial numbers (PREFIX-DDMMYYYY-XXX format)
+- Bulk Excel/CSV upload with flexible column mapping
 - Input validation with express-validator
 - Error handling middleware
 - Pagination, filtering, and sorting
 - Soft delete functionality
 - Asset statistics and analytics
-- Bulk operations support
+- Export assets functionality
 - Health check endpoints
+- CORS enabled for frontend integration
+
+## Tech Stack
+
+- **Runtime**: Node.js
+- **Framework**: Express.js
+- **Database**: MongoDB with Mongoose ODM
+- **Authentication**: bcryptjs for password hashing
+- **Validation**: express-validator
+- **File Upload**: multer + xlsx
+- **Security**: helmet, cors
 
 ## Project Structure
 
-```
+`
 IT_backend/
 ├── src/
 │   ├── config/
-│   │   ├── database.js       # MongoDB connection
-│   │   ├── environment.js    # Environment variables
-│   │   └── index.js
+│   │   ├── database.js          # MongoDB connection with DNS fix for Atlas
+│   │   ├── environment.js       # Environment variables config
+│   │   └── index.js             # Config exports
+│   │
 │   ├── controllers/
-│   │   ├── asset.controller.js
-│   │   └── index.js
+│   │   ├── asset.controller.js  # Asset CRUD, bulk upload, stats, export
+│   │   └── auth.controller.js   # Signup, login, password reset
+│   │
 │   ├── middleware/
 │   │   ├── validators/
-│   │   │   └── asset.validator.js
-│   │   ├── errorHandler.js
-│   │   ├── notFound.js
-│   │   └── index.js
+│   │   │   └── asset.validator.js  # Request validation rules
+│   │   ├── errorHandler.js      # Global error handling
+│   │   └── notFound.js          # 404 handler
+│   │
 │   ├── models/
-│   │   ├── Asset.model.js
-│   │   └── index.js
+│   │   ├── Asset.model.js       # Asset schema with indexes
+│   │   └── User.model.js        # User schema with password hashing
+│   │
 │   ├── routes/
-│   │   ├── asset.routes.js
-│   │   ├── health.routes.js
-│   │   └── index.js
-│   ├── utils/
-│   │   ├── ApiError.js
-│   │   ├── ApiResponse.js
-│   │   ├── asyncHandler.js
-│   │   ├── constants.js
-│   │   └── index.js
-│   ├── app.js
-│   └── server.js
-├── .env
-├── .env.example
+│   │   ├── asset.routes.js      # Asset API routes
+│   │   ├── auth.routes.js       # Authentication routes
+│   │   └── health.routes.js     # Health check routes
+│   │
+│   ├── app.js                   # Express app configuration
+│   └── server.js                # Server entry point
+│
+├── .env                         # Environment variables (not in git)
 ├── .gitignore
 ├── package.json
 └── README.md
-```
+`
 
-## Prerequisites
+## Database Models
 
-- Node.js (v14 or higher)
-- MongoDB (v4.4 or higher)
-- npm or yarn
+### Asset Model
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| serialNumber | String | Yes | Auto-generated unique ID (e.g., OMT-13032026-001) |
+| companyName | String | No | Company name (default: NA) |
+| branch | String | No | Branch location (default: NA) |
+| department | String | No | Department name (default: NA) |
+| userName | String | No | Assigned user (default: NA) |
+| brand | String | No | Device brand (default: NA) |
+| device | Enum | No | Device type (Desktop, Laptop, etc.) |
+| deviceSerialNo | String | No | Device serial number (default: NA) |
+| operatingSystem | String | No | OS name (default: NA) |
+| dateOfPurchase | Date | No | Purchase date (default: current date) |
+| remark | String | No | Additional notes (max 500 chars) |
+| status | Enum | No | Active, Inactive, Under Maintenance, Disposed, Lost |
+| isDeleted | Boolean | No | Soft delete flag (default: false) |
+| createdBy | ObjectId | Yes | Reference to User who created the asset |
+
+### User Model
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| username | String | Yes | Unique username (lowercase) |
+| name | String | Yes | Full name |
+| role | Enum | No | admin, manager, user (default: user) |
+| password | String | Yes | Hashed password (min 6 chars) |
+
+## API Endpoints
+
+### Base URL: /api/v1
+
+### Health Check
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /health | Check server health |
+
+### Authentication /api/v1/auth
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /signup | Register new user |
+| POST | /login | User login |
+| POST | /reset-password | Reset user password |
+
+### Assets /api/v1/assets
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | / | Get all assets (with pagination, filters, search) |
+| POST | / | Create new asset |
+| GET | /:id | Get asset by ID |
+| PUT | /:id | Update asset |
+| DELETE | /:id | Soft delete asset |
+| DELETE | /:id/permanent | Permanently delete asset |
+| GET | /serial/:serialNumber | Get asset by serial number |
+| GET | /stats/overview | Get asset statistics |
+| GET | /filters | Get available filter options |
+| GET | /export | Export assets data |
+| GET | /generate-serial/:companyName | Generate next serial number |
+| POST | /bulk | Bulk create assets (JSON) |
+| POST | /upload-excel | Upload Excel/CSV file |
+
+## Serial Number Format
+
+Serial numbers are auto-generated in the format: PREFIX-DDMMYYYY-XXX
+
+| Company Name | Prefix | Example |
+|--------------|--------|---------|
+| OmTrans | OMT | OMT-13032026-001 |
+| TGL | TGL | TGL-13032026-001 |
+| OmTrax | OMX | OMX-13032026-001 |
+| Others | First 3 letters | ABC-13032026-001 |
+
+- Sequence is unique per company prefix (continues across all dates)
+- Auto-increments: 001, 002, 003...
+
+## Query Parameters
+
+### Pagination and Sorting
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| page | 1 | Page number |
+| limit | 20 | Items per page (max 100) |
+| sortBy | createdAt | Sort field |
+| order | desc | Sort order (asc/desc) |
+
+### Filters
+| Parameter | Description |
+|-----------|-------------|
+| search | Global search across multiple fields |
+| companyName | Filter by company (comma-separated for multiple) |
+| branch | Filter by branch |
+| department | Filter by department |
+| status | Filter by status |
+| device | Filter by device type |
+| brand | Filter by brand |
+| dateFrom | Filter from date |
+| dateTo | Filter to date |
+
+## Excel Upload
+
+Supports flexible column mapping for bulk uploads:
+
+### Accepted Column Names
+| Field | Accepted Headers |
+|-------|------------------|
+| companyName | Company Name, Company, Organization |
+| branch | Branch, Location, Site, Office |
+| department | Department, Dept, Division |
+| userName | User Name, User, Employee Name, Assigned To |
+| brand | Brand, Make, Manufacturer |
+| device | Device, Device Type, Type, Category |
+| deviceSerialNo | Device Serial No, Device S.No, Serial No |
+| dateOfPurchase | Date of Purchase, Purchase Date, Date |
+| operatingSystem | OS, Operating System |
+| remark | Remark, Remarks, Notes, Comment |
+| status | Status, State, Condition |
+
+**Notes:**
+- Empty cells are auto-filled with NA
+- Serial numbers are auto-generated if not provided
+- Date defaults to current date if not provided
+- Status defaults to Active
+- Maximum 5000 records per upload
 
 ## Installation
 
-1. Clone the repository or navigate to the project directory:
-   ```bash
-   cd IT_backend
-   ```
+1. Clone the repository:
+`ash
+git clone <repository-url>
+cd IT_backend
+`
 
 2. Install dependencies:
-   ```bash
-   npm install
-   ```
+`ash
+npm install
+`
 
 3. Configure environment variables:
-   - Copy `.env.example` to `.env`
-   - Update the values as needed
+`ash
+cp .env.example .env
+`
 
-4. Start MongoDB (if not running):
-   ```bash
-   mongod
-   ```
+4. Start the server:
+`ash
+# Development mode (with hot reload)
+npm run dev
 
-5. Start the server:
-   ```bash
-   # Development mode with hot reload
-   npm run dev
-
-   # Production mode
-   npm start
-   ```
+# Production mode
+npm start
+`
 
 ## Environment Variables
 
@@ -97,120 +224,7 @@ IT_backend/
 | NODE_ENV | Environment mode | development |
 | PORT | Server port | 5000 |
 | MONGODB_URI | MongoDB connection string | mongodb://localhost:27017/it_assets_db |
-| CORS_ORIGIN | Allowed CORS origin | http://localhost:3000 |
-| API_PREFIX | API route prefix | /api/v1 |
-
-## API Endpoints
-
-### Assets
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | /api/v1/assets | Get all assets (with pagination) |
-| GET | /api/v1/assets/:id | Get asset by ID |
-| GET | /api/v1/assets/serial/:serialNumber | Get asset by serial number |
-| POST | /api/v1/assets | Create new asset |
-| PUT | /api/v1/assets/:id | Update asset |
-| DELETE | /api/v1/assets/:id | Soft delete asset |
-| DELETE | /api/v1/assets/:id/permanent | Permanently delete asset |
-| GET | /api/v1/assets/stats/overview | Get asset statistics |
-| POST | /api/v1/assets/bulk | Bulk create assets |
-
-### Health
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | /api/v1/health | API health check |
-| GET | /api/v1/health/db | Database health check |
-
-## Query Parameters
-
-### Pagination
-- `page` - Page number (default: 1)
-- `limit` - Items per page (default: 10)
-
-### Filtering
-- `company` - Filter by company
-- `branch` - Filter by branch
-- `department` - Filter by department
-- `status` - Filter by status
-- `device` - Filter by device type
-- `user` - Filter by user (partial match)
-- `search` - Search in serial number, user, device serial number, brand
-
-### Sorting
-- `sortBy` - Field to sort by (default: createdAt)
-- `order` - Sort order: asc or desc (default: desc)
-
-## Asset Model
-
-```javascript
-{
-  serialNumber: String (required, unique),
-  company: String (required),
-  branch: String (required),
-  department: String (required),
-  user: String (required),
-  brand: String (required),
-  device: String (required, enum),
-  deviceSerialNumber: String (required),
-  operatingSystem: String,
-  purchaseDate: Date (required),
-  remarks: String,
-  status: String (enum: Active, Inactive, Under Maintenance, Disposed, Lost),
-  isDeleted: Boolean,
-  createdAt: Date,
-  updatedAt: Date
-}
-```
-
-## Device Types
-
-- Desktop
-- Laptop
-- Tablet
-- Monitor
-- Printer
-- Scanner
-- Server
-- Network Device
-- Other
-
-## Example Requests
-
-### Create Asset
-```bash
-curl -X POST http://localhost:5000/api/v1/assets \
-  -H "Content-Type: application/json" \
-  -d '{
-    "serialNumber": "IT-2024-001",
-    "company": "TechCorp",
-    "branch": "Main Office",
-    "department": "Engineering",
-    "user": "John Doe",
-    "brand": "Dell",
-    "device": "Laptop",
-    "deviceSerialNumber": "DELL-XPS-123456",
-    "operatingSystem": "Windows 11 Pro",
-    "purchaseDate": "2024-01-15",
-    "remarks": "Developer workstation"
-  }'
-```
-
-### Get Assets with Filtering
-```bash
-curl "http://localhost:5000/api/v1/assets?company=TechCorp&department=Engineering&page=1&limit=10"
-```
-
-## Future Enhancements
-
-The project structure is ready for:
-- Authentication (JWT)
-- Role-based access control (RBAC)
-- File uploads for asset images
-- Audit logging
-- Email notifications
-- Export functionality (CSV, PDF)
+| CORS_ORIGIN | Allowed CORS origin | * |
 
 ## License
 
